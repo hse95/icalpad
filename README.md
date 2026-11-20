@@ -1,5 +1,5 @@
 # iCalPad
-
+## edited to include calculation with substitute 
 **A free and open-source symbolic calculator that runs in your browser.** Type equations anywhere on the page, use real units, get exact symbolic answers, plot and animate functions, and mark up pictures. No install, no account, no license fee.
 
 ### [▶ Open iCalPad](https://hse95.github.io/icalpad/)
