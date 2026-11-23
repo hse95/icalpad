@@ -559,6 +559,7 @@ function paintMath(rg, e) {
     if (r.pending) h += '<span class="pend">solving…</span>';
     else if (r.err) m = esc(r.err);
     else {
+      if (r.subTex) h += `<span class="sub">${Core.texToHtml(r.subTex)}</span>`;
       if (r.check !== undefined) h += stamp(r.check);
       else if (r.res) { const canUnit = r.res[0] === '=' && r.value; h += `<span class="res"${canUnit ? ' data-u="1" role="button" tabindex="0" title="Change the units"' : ''}>${Core.texToHtml(r.res)}</span>`; }
       if (r.hint) {

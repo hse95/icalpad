@@ -145,6 +145,7 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
 .flow .view { overflow-x: auto; overflow-y: hidden; cursor: text; }
 .view .raw { font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink2); white-space: pre-wrap; }
 .view .ph, .rg.text .ph { color: var(--ink3); }
+.sub { color: var(--ink2); }
 .res { color: var(--pen); cursor: pointer; border-radius: 4px; }
 .res:hover { background: var(--pen-soft); }
 .pend { color: var(--ink3); font-size: 13px; }
@@ -2337,7 +2338,7 @@ function callTex(x) {
   const head = TEXFN.has(n) ? '\\' + n : (FN[n] || NF[n]) ? `\\operatorname{${n}}` : symTex(n, false);
   return head + par(A.join(',\\,'));
 }
-const startsNum = x => x.t === 'num' || (x.t === 'bin' && (x.op === '*' || x.op === '^') && startsNum(x.l));
+const startsNum = x => x.t === 'num' || (x.t === 'bin' && (x.op === '*' || x.op === '/' || x.op === '^') && startsNum(x.l));
 const endsNum = x => (x.t === 'num' && x.e === undefined) || (x.t === 'bin' && x.op === '*' && endsNum(x.r));
 const isUnitSym = x => x.t === 'sym' && (x.unit !== undefined ? x.unit : isUnitName(x.name) || x.name === 'deg');
 const isMatLike = x => x.t === 'mat' || (x.t === 'bin' && x.op === '*' && isMatLike(x.r));
@@ -2372,7 +2373,9 @@ function tex(x) {
       const lp = prec(l) <= PR.ADD, rp = prec(r) <= PR.ADD || r.t === 'neg';
       const L = lp ? par(tex(l)) : tex(l), R = rp ? par(tex(r)) : tex(r);
       let sep = '\\cdot ';
-      if (!rp && startsUnit(r) && isMatLike(l)) sep = '\\;';
+      // Keep the multiplication dot when substitution makes both factors numeric.
+      if (endsNum(l) && startsNum(r)) sep = '\\cdot ';
+      else if (!rp && startsUnit(r) && isMatLike(l)) sep = '\\;';
       else if (!rp && startsUnit(r) && !(r.t === 'sym' && r.name === 'deg')) sep = isUnitSym(l) || (l.t === 'bin' && startsUnit(l) && !endsNum(l)) || (l.t === 'bin' && l.op !== '*' ? false : endsUnit(l)) ? '{\\cdot}' : '\\,';
       else if (r.t === 'sym' && r.name === 'deg' && isUnitSym(r)) sep = '';
       else if (rp || lp) sep = startsNum(r) && !rp && endsNum(l) ? '\\cdot ' : '';
@@ -2493,7 +2496,7 @@ function showNumeric(c, unitRaw) {          // canonical value -> {tex, text, ch
   const n = numericC(c);
   if (n.t === 'b') return { tex: `\\text{${n.v}}`, text: String(n.v), check: n.v };
   const q = quant(n);
-  if (q) { const u = pickUnit(q.u, unitRaw, q.v), v = q.v / u.f; return { tex: numTex(v) + (u.tex ? (u.tex[0] === '^' ? '' : '\\,') + u.tex : ''), text: numText(v) + (u.text ? ' ' + u.text : '') }; }
+  if (q) { const u = pickUnit(q.u, unitRaw, q.v), v = q.v / u.f; return { tex: numTex(v) + (u.tex ? (u.tex[0] === '^' ? '' : '\\,') + u.tex : ''), text: numText(v) + (u.text ? ' ' + u.text : ''), displayedValue: v, displayUnit: { f: u.f, tex: u.tex, text: u.text } }; }
   if (n.t === 'm') {
     const qs = n.r.map(r => r.map(quant));
     if (qs.every(r => r.every(Boolean))) {
@@ -2517,6 +2520,49 @@ function showNumeric(c, unitRaw) {          // canonical value -> {tex, text, ch
   if (n.t === '+') throw new CalcError('These units cannot be added together, for example a length plus a force');
   if (n.t === 'rel') throw new CalcError('Both sides need values to compare');
   throw new CalcError('This could not be worked out to a number');
+}
+
+// Expand previously defined variables for a readable, unit-preserving substitution line.
+function expandDisplayExpr(x, scope, seen = new Set()) {
+  if (!x || typeof x !== 'object') return x;
+  if (x.t === 'sym') {
+    const entry = scope.get(x.name);
+    // Prefer the expression snapshot captured when this value was defined.
+    // Unresolved names remain symbols and can still use the worksheet's late binding.
+    const source = entry && (entry.displayExpr || entry.expr);
+    if (entry && !entry.fn && source && !seen.has(x.name)) {
+      const next = new Set(seen); next.add(x.name);
+      return expandDisplayExpr(source, scope, next);
+    }
+    return { ...x };
+  }
+  if (Array.isArray(x)) return x.map(v => expandDisplayExpr(v, scope, seen));
+  const out = {};
+  for (const [k, v] of Object.entries(x)) out[k] = expandDisplayExpr(v, scope, seen);
+  return out;
+}
+
+// Expand defined variables even when the line is a unit conversion.
+// The substitution keeps the source units; showNumeric formats the final value
+// in the requested target unit.
+function substitutedDisplayTex(expr, scope) {
+  const expanded = expandDisplayExpr(expr, scope);
+  return tex(expanded) !== tex(expr) ? '= ' + tex(expanded) : '';
+}
+
+// A conversion of a previously calculated scalar quantity is a conversion
+// of its stored display value, not another expansion of its defining formula.
+function conversionDisplayTex(expr, scope, targetUnit) {
+  if (!targetUnit || expr.t !== 'sym') return '';
+  const entry = scope.get(expr.name), shown = entry && entry.displayNumeric;
+  if (!shown || !shown.displayUnit || !shown.displayUnit.tex) return '';
+  const targetQ = quant(numericC(ev(targetUnit, EMPTY_ENV))), source = shown.displayUnit;
+  if (!targetQ) return '';
+  const q = quant(numericC(entry.v));
+  if (!q || !sameDims(dimsOf(q.u), dimsOf(targetQ.u))) return '';
+  const factor = source.f / targetQ.v, factorTex = Number(factor.toPrecision(6)).toString(), targetTex = unitTex(targetUnit);
+  return '= ' + numTex(shown.displayedValue) + '\\,' + source.tex +
+    '\\times ' + factorTex + '\\,\\frac{' + targetTex + '}{' + source.tex + '}';
 }
 
 // ---------- running a worksheet ----------
@@ -2551,16 +2597,22 @@ function runStatement(st, scope) {
       scope.set(name, { fn: true, params, body });
       return { kind: 'def', name, params, tex: lt + '\\mathrel{:=}' + inTex, res: extra, text, hint: unevaluated(body) };
     }
-    let v = ev(expr, env), extra = '', text = '', check;
+    let v = ev(expr, env), extra = '', text = '', check, subTex = '', displayNumeric;
     if (st.show === 'sym') { const s = symbolic(v); v = s.r; extra = ARROW(s.kw) + toTex(v); text = toText(v); }
-    else if (st.show === 'num') { const s = showNumeric(v, st.unit); extra = '=' + s.tex; text = s.text; check = s.check; }
-    scope.set(name, { v });
-    return { kind: 'def', name, value: v, tex: lt + '\\mathrel{:=}' + inTex, res: extra, text, check, hint: unevaluated(v) };
+    else if (st.show === 'num') {
+      subTex = substitutedDisplayTex(expr, scope);
+      const s = showNumeric(v, st.unit); displayNumeric = s; extra = '=' + s.tex; text = s.text; check = s.check;
+    }
+    // Keep the display expansion and the formatted numeric value as snapshots.
+    const displayExpr = expandDisplayExpr(expr, scope);
+    scope.set(name, { v, expr, displayExpr, displayNumeric });
+    return { kind: 'def', name, value: v, tex: lt + '\\mathrel{:=}' + inTex, subTex, res: extra, text, check, hint: unevaluated(v) };
   }
   if (kind === 'eval') {
     if (st.show === 'sym') { const s = symbolic(st.mod && (BIND[KW[st.mod.kw] || st.mod.kw]) ? ZERO : ev(expr, env)); return { kind: 'sym', value: s.r, tex: inTex, res: ARROW(s.kw) + toTex(s.r), text: toText(s.r), hint: unevaluated(s.r) }; }
     const v = ev(expr, env), s = showNumeric(v, st.unit);
-    return { kind: 'eval', value: v, tex: inTex, res: '=' + s.tex, text: s.text, check: s.check };
+    const subTex = conversionDisplayTex(expr, scope, st.unit) || substitutedDisplayTex(expr, scope);
+    return { kind: 'eval', value: v, tex: inTex, subTex, res: '=' + s.tex, text: s.text, check: s.check };
   }
   // a bare expression: show a value when there is one
   const v = ev(expr, env);
@@ -3744,6 +3796,7 @@ function paintMath(rg, e) {
     if (r.pending) h += '<span class="pend">solving…</span>';
     else if (r.err) m = esc(r.err);
     else {
+      if (r.subTex) h += `<span class="sub">${Core.texToHtml(r.subTex)}</span>`;
       if (r.check !== undefined) h += stamp(r.check);
       else if (r.res) { const canUnit = r.res[0] === '=' && r.value; h += `<span class="res"${canUnit ? ' data-u="1" role="button" tabindex="0" title="Change the units"' : ''}>${Core.texToHtml(r.res)}</span>`; }
       if (r.hint) {

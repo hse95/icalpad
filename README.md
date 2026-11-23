@@ -1,8 +1,8 @@
 # iCalPad
-
+## edited to include calculation with substitute 
 **A free and open-source symbolic calculator that runs in your browser.** Type equations anywhere on the page, use real units, get exact symbolic answers, plot and animate functions, and mark up pictures. No install, no account, no license fee.
 
-### [▶ Open iCalPad](https://hse95.github.io/icalpad/)
+### [▶ Open iCalPad](https://bhatthiman.github.io/icalpad/)
 
 The whole app is **one HTML file of about 270 KB** (about 84 KB over the network). It opens in a second, works on a phone, and keeps your worksheet in your own browser.
 
@@ -13,7 +13,7 @@ The whole app is **one HTML file of about 270 KB** (about 84 KB over the network
 
 ## Why iCalPad
 
-I was tired of paying for software, especially symbolic calculators. Tools such as Mathcad and Mathematica are excellent, but they cost money, need an install, and are not always at hand on a lab computer or a phone. I built iCalPad to use it myself, and anyone else is free to use it as well. It is **free and open source** under the MIT license, so you can use it, copy it, change it and share it. It aims to cover the everyday part of that work:
+It's useful, no install, browser app. this fork is to provide some more features. For more details of Why this app, refer original owner's readme file.
 
 - **Free-form page.** Click anywhere and type. Drag equations, notes, plots and pictures wherever you want them, like a calculation pad.
 - **Real units.** `90 km/hr`, `200 GPa`, `5 kip*ft`. Units convert on their own, and adding a length to a force is caught as an error.
